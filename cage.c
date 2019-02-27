@@ -76,6 +76,11 @@ handle_signal(int signal, void *data)
 	case SIGTERM:
 		wl_display_terminate(display);
 		return 0;
+	case SIGCHLD:
+		wlr_log(WLR_DEBUG, "Received SIGCHLD, exiting");
+		wl_display_terminate(display);
+		wlr_log(WLR_DEBUG, "Display terminated");
+		return 0;
 	default:
 		return 1;
 	}
@@ -128,8 +133,7 @@ main(int argc, char *argv[])
 {
 	struct cg_server server = {0};
 	struct wl_event_loop *event_loop = NULL;
-	struct wl_event_source *sigint_source = NULL;
-	struct wl_event_source *sigterm_source = NULL;
+	struct wl_event_source *signals[3];
 	struct wlr_renderer *renderer = NULL;
 	struct wlr_compositor *compositor = NULL;
 	struct wlr_data_device_manager *data_device_mgr = NULL;
@@ -159,8 +163,9 @@ main(int argc, char *argv[])
 	}
 
 	event_loop = wl_display_get_event_loop(server.wl_display);
-	sigint_source = wl_event_loop_add_signal(event_loop, SIGINT, handle_signal, &server.wl_display);
-	sigterm_source = wl_event_loop_add_signal(event_loop, SIGTERM, handle_signal, &server.wl_display);
+	signals[0] = wl_event_loop_add_signal(event_loop, SIGINT, handle_signal, &server.wl_display);
+	signals[1] = wl_event_loop_add_signal(event_loop, SIGTERM, handle_signal, &server.wl_display);
+	signals[2] = wl_event_loop_add_signal(event_loop, SIGCHLD, handle_signal, &server.wl_display);
 
 	server.backend = wlr_backend_autocreate(server.wl_display, NULL);
 	if (!server.backend) {
@@ -315,6 +320,7 @@ main(int argc, char *argv[])
 	}
 
 	wl_display_run(server.wl_display);
+	wlr_log(WLR_DEBUG, "out of display run");
 
 #if CAGE_HAS_XWAYLAND
 	wlr_xwayland_destroy(xwayland);
@@ -322,11 +328,14 @@ main(int argc, char *argv[])
 #endif
 	wl_display_destroy_clients(server.wl_display);
 
+	wlr_log(WLR_DEBUG, "Waiting on pid...");
 	waitpid(pid, NULL, 0);
+	wlr_log(WLR_DEBUG, "Waiting is over");
 
 end:
-	wl_event_source_remove(sigint_source);
-	wl_event_source_remove(sigterm_source);
+	for(int i = 0; i < 3; i++) {
+		wl_event_source_remove(signals[i]);
+	}
 	seat_destroy(server.seat);
 	wlr_server_decoration_manager_destroy(server_decoration_manager);
 	wlr_xdg_decoration_manager_v1_destroy(xdg_decoration_manager);
