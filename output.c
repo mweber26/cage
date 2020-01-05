@@ -100,7 +100,7 @@ output_surface_for_each_surface_iterator(struct wlr_surface *surface, int sx, in
 	data->user_iterator(data->output, surface, &box, data->user_data);
 }
 
-static void
+void
 output_surface_for_each_surface(struct cg_output *output, struct wlr_surface *surface,
 				double ox, double oy, cg_surface_iterator_func_t iterator,
 				void *user_data)
@@ -130,6 +130,22 @@ output_view_for_each_surface(struct cg_output *output, struct cg_view *view,
 
 	wlr_output_layout_output_coords(output->server->output_layout, output->wlr_output, &data.ox, &data.oy);
 	view_for_each_surface(view, output_surface_for_each_surface_iterator, &data);
+}
+
+void
+output_view_for_each_popup(struct cg_output *output, struct cg_view *view,
+			   cg_surface_iterator_func_t iterator, void *user_data)
+{
+	struct surface_iterator_data data = {
+		.user_iterator = iterator,
+		.user_data = user_data,
+		.output = output,
+		.ox = view->lx,
+		.oy = view->ly,
+	};
+
+	wlr_output_layout_output_coords(output->server->output_layout, output->wlr_output, &data.ox, &data.oy);
+	view_for_each_popup(view, output_surface_for_each_surface_iterator, &data);
 }
 
 struct send_frame_done_data {

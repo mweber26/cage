@@ -97,6 +97,18 @@ render_surface_iterator(struct cg_output *output, struct wlr_surface *surface,
 	render_texture(wlr_output, output_damage, texture, box, matrix);
 }
 
+static void
+render_popup_iterator(struct cg_output *output, struct wlr_surface *surface,
+		      struct wlr_box *box, void *data)
+{
+	/* Render this popup's surface. */
+	render_surface_iterator(output, surface, box, data);
+
+	/* Render this popup's child toplevels. */
+	output_surface_for_each_surface(output, surface, box->x, box->y,
+					render_surface_iterator, data);
+}
+
 /**
  * Render all toplevels without descending into popups.
  */
@@ -106,8 +118,20 @@ render_view_toplevels(struct cg_view *view, struct cg_output *output, pixman_reg
 	struct render_data data = {
 		.damage = damage,
 	};
+	double ox = view->lx;
+	double oy = view->ly;
+	wlr_output_layout_output_coords(output->server->output_layout, output->wlr_output, &ox, &oy);
+	output_surface_for_each_surface(output, view->wlr_surface, ox, oy,
+					render_surface_iterator, &data);
+}
 
-	output_view_for_each_surface(output, view, render_surface_iterator, &data);
+static void
+render_view_popups(struct cg_view *view, struct cg_output *output, pixman_region32_t *damage)
+{
+	struct render_data data = {
+		.damage = damage,
+	};
+	output_view_for_each_popup(output, view, render_popup_iterator, &data);
 }
 
 static void
@@ -151,8 +175,11 @@ output_render(struct cg_output *output, pixman_region32_t *buffer_damage)
 	struct cg_view *view;
 	wl_list_for_each_reverse(view, &server->views, link) {
 		render_view_toplevels(view, output, buffer_damage);
-		// TODO: popups on top view, possibly use focused view for this
-		// TODO: render only top view, possibly use focused view for this
+	}
+
+	struct cg_view *focused_view = seat_get_focus(server->seat);
+	if (focused_view) {
+		render_view_popups(focused_view, output, buffer_damage);
 	}
 
 	render_drag_icons(output, buffer_damage, &server->seat->drag_icons);
