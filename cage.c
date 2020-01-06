@@ -111,6 +111,7 @@ usage(FILE *file, const char *cage)
 		"\n"
 		" -d\t Don't draw client side decorations, when possible\n"
 		" -r\t Rotate the output 90 degrees clockwise, specify up to three times\n"
+		" -i [blank time]\t Time (in seconds) before blanking screen due to idle activity\n"
 #ifdef DEBUG
 		" -D\t Turn on damage tracking debugging\n"
 #endif
@@ -125,13 +126,16 @@ parse_args(struct cg_server *server, int argc, char *argv[])
 {
 	int c;
 #ifdef DEBUG
-	while ((c = getopt(argc, argv, "drDh")) != -1) {
+	while ((c = getopt(argc, argv, "drDhi:")) != -1) {
 #else
-	while ((c = getopt(argc, argv, "drh")) != -1) {
+	while ((c = getopt(argc, argv, "drhi:")) != -1) {
 #endif
 		switch (c) {
 		case 'd':
 			server->xdg_decoration = true;
+			break;
+		case 'i':
+			server->idle_timeout = (int)atol(optarg);
 			break;
 		case 'r':
 			server->output_transform++;
@@ -161,6 +165,30 @@ parse_args(struct cg_server *server, int argc, char *argv[])
 	return true;
 }
 
+static void handle_blank_timeout_notify(struct wl_listener *listener, void *data)
+{
+	struct cg_idle *idle;
+	struct cg_output *output;
+
+	idle = wl_container_of(listener, idle, blank_timeout_notify);
+	wl_list_for_each(output, &idle->server->outputs, link) {
+		wlr_output_enable(output->wlr_output, false);
+		wlr_output_commit(output->wlr_output);
+	}
+}
+
+static void handle_blank_timeout_resume(struct wl_listener *listener, void *data)
+{
+	struct cg_idle *idle;
+	struct cg_output *output;
+
+	idle = wl_container_of(listener, idle, blank_timeout_resume);
+	wl_list_for_each(output, &idle->server->outputs, link) {
+		wlr_output_enable(output->wlr_output, true);
+		wlr_output_commit(output->wlr_output);
+	}
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -178,6 +206,8 @@ main(int argc, char *argv[])
 	struct wlr_xdg_output_manager_v1 *output_manager = NULL;
 	struct wlr_gamma_control_manager_v1 *gamma_control_manager = NULL;
 	struct wlr_xdg_shell *xdg_shell = NULL;
+	struct wlr_idle_timeout *blank_timeout = NULL;
+	struct cg_idle idle_notify;
 #if CAGE_HAS_XWAYLAND
 	struct wlr_xwayland *xwayland = NULL;
 	struct wlr_xcursor_manager *xcursor_manager = NULL;
@@ -391,6 +421,17 @@ main(int argc, char *argv[])
 	wlr_xwayland_set_seat(xwayland, server.seat->seat);
 #endif
 
+	//set up the blanking idle timer
+	if(server.idle_timeout > 0)
+	{
+		blank_timeout = wlr_idle_timeout_create(server.idle, server.seat->seat, server.idle_timeout * 1000);
+		idle_notify.server = &server;
+		idle_notify.blank_timeout_notify.notify = handle_blank_timeout_notify;
+		idle_notify.blank_timeout_resume.notify = handle_blank_timeout_resume;
+		wl_signal_add(&blank_timeout->events.idle, &idle_notify.blank_timeout_notify);
+		wl_signal_add(&blank_timeout->events.resume, &idle_notify.blank_timeout_resume);
+	}
+
 	pid_t pid;
 	if (!spawn_primary_client(argv + optind, &pid)) {
 		ret = 1;
@@ -410,6 +451,8 @@ main(int argc, char *argv[])
 end:
 	wl_event_source_remove(sigint_source);
 	wl_event_source_remove(sigterm_source);
+	if(server.idle_timeout > 0)
+		wlr_idle_timeout_destroy(blank_timeout);
 	seat_destroy(server.seat);
 	wlr_output_layout_destroy(server.output_layout);
 	/* This function is not null-safe, but we only ever get here

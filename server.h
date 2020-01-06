@@ -38,11 +38,18 @@ struct cg_server {
 	struct wl_listener new_xwayland_surface;
 #endif
 
+	int idle_timeout;
 	bool xdg_decoration;
 	enum wl_output_transform output_transform;
 #ifdef DEBUG
 	bool debug_damage_tracking;
 #endif
+};
+
+struct cg_idle {
+	struct cg_server *server;
+	struct wl_listener blank_timeout_notify;
+	struct wl_listener blank_timeout_resume;
 };
 
 #endif

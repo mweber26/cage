@@ -359,6 +359,7 @@ handle_new_output(struct wl_listener *listener, void *data)
 	preferred_mode = wlr_output_preferred_mode(wlr_output);
 	if (preferred_mode) {
 		wlr_output_set_mode(wlr_output, preferred_mode);
+		wlr_output_commit(wlr_output);
 	}
 
 	struct cg_output *output = calloc(1, sizeof(struct cg_output));
@@ -389,6 +390,7 @@ handle_new_output(struct wl_listener *listener, void *data)
 	}
 
 	wlr_output_set_transform(wlr_output, server->output_transform);
+	wlr_output_commit(wlr_output);
 
 	wlr_output_layout_add_auto(server->output_layout, wlr_output);
 
